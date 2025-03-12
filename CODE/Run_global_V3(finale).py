@@ -14,8 +14,8 @@ SERVICE_UUID = "180D"
 CHARACTERISTIC_UUID = "2A37"
 
 # Configuration du programme
-SAMPLES_PER_SEGMENT = 5000  # 500 Hz * 10 secondes
-MAX_SEGMENTS = 9  # ✅ On s'arrête après X fichiers (5000*X valeurs)
+SAMPLES_PER_SEGMENT = 5000  # 500 Hz * 10 secondes. On veut 5000 valeurs par ligne dans le tableau final et par fichier enregistré.
+MAX_SEGMENTS = 9  # ✅ On s'arrête après X fichiers (5000*X valeurs). On veut 9 lignes de 5000 valeurs dans le tableau final et 9 fichiers de 5000 valeurs enregistrés.
 TIMEOUT = 600 #temps max d'éxecution (5mn)
 take_already_acquired_data = True
 
@@ -191,40 +191,41 @@ def Treatment(ecg_data,time_data,show_steps=True):
 
 
 #Bluetooth aquisition
-async def notification_handler(sender, data):
+async def notification_handler(sender, data): #Fonction principale de la réception et formatge des données
     """Réception et traitement précis des données BLE"""
-    decoded_data = data.decode("utf-8").strip()
-
+    decoded_data = data.decode("utf-8").strip() #On reçoit les données sous forme de bytes donc on les décode sous forme de chaîne de caractères
+#La chaîne de caractère est de la forme "(temps,ecg) ; (temps,ecg); ..." c'est un chaîne de caratère de paires en sorte
+    
     global ecg_data, time_data, segment_count, sample_count
 
     # Vérifie que la ligne contient une virgule (évite erreurs de format)
     if "," not in decoded_data:
         print(" Donnée ignorée (pas de virgule) : ", decoded_data)
 
-    pairs = decoded_data.split(";")  # Séparer les valeurs reçues en paquets
+    pairs = decoded_data.split(";")  # Séparer les paires reçues dans une liste : [(temps,ecg), (temps, ecg), ...]
     #print('len(pairs) =',len(pairs),f'pairs[0]={pairs[0]}')
     
-    for pair in pairs:
-        if "," in pair and pair.count(",") == 1:  # Vérifie que la donnée est bien au format
-            time_val, ecg_value = pair.split(",")
+    for pair in pairs: #on regarde à l'intérieur de chaque paire de la liste, donc dans (temps, ecg)
+        if "," in pair and pair.count(",") == 1:  # Vérifie que la donnée est bien au bon format
+            time_val, ecg_value = pair.split(",") # Séparation de la paire en deux variable time_val pour temps et ecg_value pour ecg
     
             if ecg_value.strip():  # Vérifie que la valeur ECG n'est pas vide
                 ecg_value = int(ecg_value)
                 elapsed_time = float(time_val)
                     
-                ecg_data[segment_count,sample_count] = ecg_value
-                time_data[segment_count,sample_count] = time_val
-                sample_count += 1
+                ecg_data[segment_count,sample_count] = ecg_value #On alimente le tableau ecg_data avec la nouvelle valeur ecg
+                time_data[segment_count,sample_count] = time_val #On alimente le tableau time_data avec la nouvelle valeur de temps
+                sample_count += 1 #On augmente le nombre de donnée acquise de 1 (on ajoute une colonne au tableau final)
                 
-                if sample_count%500==0:
+                if sample_count%500==0: #Affichage du nombre de données acquises toutes les 500 données pour un suivi en direct
                     print('sample count',sample_count)
 
-                if sample_count > SAMPLES_PER_SEGMENT-1:
+                if sample_count > SAMPLES_PER_SEGMENT-1: #On change de segment (ligne) car on a atteint sa limite de taille
                     print('captured segment',segment_count)
                     segment_count += 1
                     sample_count = 0
 
-                if segment_count > MAX_SEGMENTS-1:
+                if segment_count > MAX_SEGMENTS-1: #Une fois le nombre de colonnes/fichiers souhaités acquis, on arrête le programme
                     print(f"Capture terminée après {MAX_SEGMENTS} fichiers.")
                     save_files()
                     asyncio.get_running_loop().stop()
@@ -248,7 +249,7 @@ async def main():
             await asyncio.sleep(600)  # Capture pendant 10 minutes, mais sera interrompu après 6 fichiers
             await client.stop_notify(CHARACTERISTIC_UUID)
 
-async def scan_devices():
+async def scan_devices(): #Pour trouver l'adresse de l'arduino
     devices = await BleakScanner.discover()
     for d in devices:
         print(f"Nom: {d.name}, Adresse: {d.address}")
